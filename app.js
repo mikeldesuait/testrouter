@@ -1677,10 +1677,10 @@
       reader.onload = (ev) => {
         try {
           const data = JSON.parse(ev.target.result);
-          if (typeof applyLoadedPayload === 'function') {
-            applyLoadedPayload(data);
+          if (typeof window.cargarProgresoGlobal === 'function') {
+            window.cargarProgresoGlobal(data);
           } else {
-            alert('❌ Error interno: applyLoadedPayload no está definido.');
+            alert('❌ Error crítico: no se pudo conectar con el motor.');
           }
         } catch (err) {
           alert('❌ Error al leer el archivo JSON:\n' + err.message);
@@ -1707,5 +1707,40 @@
     }
   });
 
+
+  /* ─── EXPONER CARGA AL EXTERIOR ─── */
+  window.cargarProgresoGlobal = function(data) {
+    if (!data || typeof data !== 'object' || !data.answers) {
+      alert('❌ El archivo no es válido o no contiene respuestas.');
+      return;
+    }
+
+    const actual = computeStats();
+    if (actual.answered > 0) {
+      const ok = confirm('⚠️ Ya tienes progreso (' + actual.answered + ' contestadas).\n\n¿Sobrescribir con el archivo cargado?');
+      if (!ok) return;
+    }
+
+    state.mode     = (data.mode === 'exam') ? 'exam' : 'study';
+    state.theme    = (data.theme === 'dark') ? 'dark' : 'light';
+    state.lang     = (data.lang === 'es') ? 'es' : 'en';
+    state.order    = Array.isArray(data.order) && data.order.length === QUESTIONS.length ? data.order : state.order;
+    state.idx      = typeof data.idx === 'number' ? Math.max(0, Math.min(data.idx, state.order.length - 1)) : 0;
+    state.answers  = data.answers || {};
+    state.optOrder = data.optOrder || {};
+    state.finished = !!data.finished;
+    state.reviewed = !!data.reviewed;
+    state.filter   = data.filter || null;
+    
+    saveState();
+    applyTheme();
+    updateThemeButton();
+    updateModeButton();
+    updateLangButton();
+    render();
+    updateProgress();
+    
+    toast('📥 Progreso cargado desde archivo', 3000);
+  };
 
 })();

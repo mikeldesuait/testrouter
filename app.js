@@ -1363,4 +1363,167 @@
     init();
   }
 
+  /* ═══════════════════════════════════════════════════════
+     GUARDAR / CARGAR EN SERVIDOR LOCAL
+     ═══════════════════════════════════════════════════════ */
+
+  function buildProgressPayload() {
+    return {
+      app: 'testrouter',
+      version: 2,
+      savedAt: new Date().toISOString(),
+      mode: state.mode,
+      theme: state.theme,
+      lang: state.lang,
+      idx: state.idx,
+      order: state.order,
+      answers: state.answers,
+      optOrder: state.optOrder,
+      finished: state.finished,
+      reviewed: state.reviewed,
+      stats: (typeof computeStats === 'function' ? computeStats() : {})
+    };
+  }
+
+  async function saveToServer() {
+    const btn = document.getElementById('btnServerSave');
+    const filename = 'progress-' +
+      new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.json';
+
+    const payload = buildProgressPayload();
+    payload.filename = filename;
+
+    try {
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando…'; }
+
+      const res = await fetch('/api/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+
+      state._dirty = false;
+      if (typeof saveState === 'function') saveState();
+
+      if (typeof toast === 'function') toast('💾 Guardado: ' + data.file, 3000);
+      if (typeof showSaveIndicator === 'function') {
+        showSaveIndicator('Guardado: ' + data.file);
+      }
+
+    } catch (err) {
+      console.error(err);
+      alert(
+        '❌ No se pudo guardar en el servidor.\n\n' +
+        'Comprueba que `python3 server.py` está corriendo\n' +
+        'y que abriste http://localhost:8000\n\n' +
+        'Error: ' + err.message
+      );
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '💾 Guardar en servidor';
+      }
+    }
+  }
+
+  async function loadFromServer() {
+    try {
+      const listRes = await fetch('/api/list');
+      if (!listRes.ok) throw new Error('HTTP ' + listRes.status);
+      const { files } = await listRes.json();
+
+      if (!files || files.length === 0) {
+        alert('ℹ️ No hay guardados todavía.\n\nUsa antes "💾 Guardar en servidor".');
+        return;
+      }
+
+      const options = files.map((f, i) => `${i + 1}. ${f}`).join('\n');
+      const choice = prompt(
+        '📁 Guardados disponibles:\n\n' + options +
+        '\n\nEscribe el NÚMERO del que quieres cargar:'
+      );
+
+      if (!choice) return;
+
+      const n = parseInt(choice, 10);
+      let filename;
+      if (!isNaN(n) && n >= 1 && n <= files.length) {
+        filename = files[n - 1];
+      } else if (files.includes(choice)) {
+        filename = choice;
+      } else {
+        alert('❌ Selección no válida.');
+        return;
+      }
+
+      const res = await fetch('/api/load', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename })
+      });
+
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const { ok, data } = await res.json();
+      if (!ok || !data) throw new Error('Respuesta inválida');
+
+      const answeredNow = Object.values(state.answers || {}).filter(a => a.answered).length;
+      if (answeredNow > 0) {
+        const conf = confirm(
+          '⚠️ Ya tienes progreso (' + answeredNow + ' contestadas).\n\n' +
+          '¿Sobrescribir con "' + filename + '"?'
+        );
+        if (!conf) return;
+      }
+
+      state.mode     = (data.mode === 'exam') ? 'exam' : 'study';
+      state.theme    = (data.theme === 'dark') ? 'dark' : 'light';
+      state.lang     = (data.lang === 'es') ? 'es' : 'en';
+      state.idx      = typeof data.idx === 'number'
+                        ? Math.max(0, Math.min(data.idx, (data.order || []).length - 1))
+                        : 0;
+      state.order    = Array.isArray(data.order) && data.order.length === QUESTIONS.length
+                        ? data.order
+                        : state.order;
+      state.answers  = data.answers || {};
+      state.optOrder = (data.optOrder && typeof data.optOrder === 'object')
+                        ? data.optOrder
+                        : {};
+      state.finished = !!data.finished;
+      state.reviewed = !!data.reviewed;
+
+      if (typeof saveState === 'function') saveState();
+      if (typeof applyTheme === 'function') applyTheme();
+      if (typeof updateThemeButton === 'function') updateThemeButton();
+      if (typeof updateModeButton === 'function') updateModeButton();
+      if (typeof updateLangButton === 'function') updateLangButton();
+      if (typeof render === 'function') render();
+      if (typeof updateProgress === 'function') updateProgress();
+
+      if (typeof toast === 'function') toast('📥 Cargado: ' + filename, 3000);
+      if (typeof showSaveIndicator === 'function') {
+        showSaveIndicator('Progreso restaurado');
+      }
+
+    } catch (err) {
+      console.error(err);
+      alert(
+        '❌ No se pudo cargar del servidor.\n\n' +
+        'Comprueba que `python3 server.py` está corriendo.\n\n' +
+        'Error: ' + err.message
+      );
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const b1 = document.getElementById('btnServerSave');
+    const b2 = document.getElementById('btnServerLoad');
+    if (b1) b1.addEventListener('click', saveToServer);
+    if (b2) b2.addEventListener('click', loadFromServer);
+    console.log('🌐 Botones de servidor local conectados');
+  });
+
+
 })();

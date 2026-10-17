@@ -1473,6 +1473,58 @@
     init();
   }
 
+
+  /* ═══════════════════════════════════════════════════════
+     GUARDAR / CARGAR DESDE ARCHIVO LOCAL (DESCARGA)
+     ═══════════════════════════════════════════════════════ */
+
+  function downloadJson() {
+    const payload = buildProgressPayload();
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const ts = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'testrouter-progreso-' + ts + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    state._dirty = false;
+    if (typeof saveState === 'function') saveState();
+    if (typeof toast === 'function') toast('💾 Archivo JSON descargado', 3000);
+  }
+
+  function uploadJson() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = JSON.parse(ev.target.result);
+          // Reutilizamos la función de restaurar del servidor
+          if (typeof applyLoadedPayload === 'function') {
+            applyLoadedPayload(data);
+          } else {
+            alert('❌ Error interno: no se encuentra applyLoadedPayload');
+          }
+        } catch (err) {
+          alert('❌ Error al leer el archivo JSON:\n' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
   /* ═══════════════════════════════════════════════════════
      GUARDAR / CARGAR EN SERVIDOR LOCAL
      ═══════════════════════════════════════════════════════ */

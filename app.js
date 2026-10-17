@@ -75,7 +75,9 @@
     theme: 'light',         // 'light' | 'dark'
     lang: 'en',             // 'en' | 'es' — idioma del enunciado y opciones
     idx: 0,                 // índice de la pregunta actual
-    order: [],              // orden de los índices de QUESTIONS
+    order: [],              // orden GLOBAL de las 100 (nunca cambia al filtrar)
+  filter: null,           // { type: 'pending'|'wrong', ids: [...] } o null
+  saveIdxBeforeFilter: 0, // guarda la posición global antes de filtrar
     answers: {},            // { [qId]: { type, value, isCorrect, answered } }
     optOrder: {},           // { [qId]: ['B','D','A','C'] } orden de opciones
     finished: false,        // true cuando se ha pulsado "Corregir todo"
@@ -215,8 +217,21 @@
      PREGUNTAS — Helpers
      ═══════════════════════════════════════════════════════ */
 
+  /**
+   * Devuelve la lista de índices (sobre QUESTIONS) que se están
+   * mostrando ahora mismo, aplicando el filtro si lo hay.
+   */
+  function getVisibleList() {
+    if (!state.filter || !Array.isArray(state.filter.ids)) {
+      return state.order;
+    }
+    const set = new Set(state.filter.ids);
+    return state.order.filter(i => set.has(i));
+  }
+
   function currentQ() {
-    return QUESTIONS[state.order[state.idx]];
+    const list = getVisibleList();
+    return QUESTIONS[list[state.idx]];
   }
 
   function getOptKeys(q) {
@@ -282,6 +297,7 @@
       initOrder();
       state.answers = {};
       state.finished = false;
+      state.filter = null;
     }
 
     // Si no hay orden, generarlo
@@ -320,6 +336,14 @@
     $('#btnFinish')?.addEventListener('click', finishAll);
     $('#btnStudyOnly')?.addEventListener('click', () => filterPending());
     $('#btnWrongOnly')?.addEventListener('click', () => filterWrong());
+    $('#btnShowAll')?.addEventListener('click', () => {
+      state.filter = null;
+      state.idx = state.saveIdxBeforeFilter || 0;
+      saveState();
+      render();
+      updateProgress();
+      toast('🌐 Volviendo a la pregunta ' + (state.idx + 1));
+    });
 
     $('#btnExport')?.addEventListener('click', exportAnswers);
     $('#btnImport')?.addEventListener('click', importAnswers);
@@ -402,15 +426,55 @@
      ═══════════════════════════════════════════════════════ */
 
   function go(delta) {
-    const total = state.order.length;
+    const list = getVisibleList();
+    const total = list.length;
     const nuevo = clamp(state.idx + delta, 0, total - 1);
     if (nuevo === state.idx) return;
     state.idx = nuevo;
+    state._dirty = true;
     saveState();
     render();
     updateProgress();
     cerrarPanel();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     BANNER DE FILTRO ACTIVO
+     ═══════════════════════════════════════════════════════ */
+
+  function renderFilterBanner(host) {
+    const existing = host.querySelector('.filter-banner');
+    if (existing) existing.remove();
+
+    if (!state.filter) return;
+
+    const visible = getVisibleList();
+    const total = visible.length;
+    const tipo = state.filter.type === 'wrong' ? 'falladas' : 'pendientes';
+    const emoji = state.filter.type === 'wrong' ? '❌' : '🎯';
+
+    const banner = document.createElement('div');
+    banner.className = 'filter-banner visible ' +
+      (state.filter.type === 'wrong' ? 'banner-wrong' : 'banner-pending');
+
+    banner.innerHTML =
+      '<div class="filter-banner-text">' +
+        emoji + ' Estás viendo solo las <strong>' + total + ' preguntas ' + tipo + '</strong>' +
+        ' (' + (state.idx + 1) + ' de ' + total + ')' +
+      '</div>' +
+      '<button class="filter-banner-btn" type="button"><span>🌐 Salir del filtro</span></button>';
+
+    banner.querySelector('.filter-banner-btn').addEventListener('click', () => {
+      state.filter = null;
+      state.idx = state.saveIdxBeforeFilter || 0;
+      saveState();
+      render();
+      updateProgress();
+      toast('🌐 Volviendo a la pregunta ' + (state.idx + 1));
+    });
+
+    host.insertBefore(banner, host.firstChild);
   }
 
   /* ═══════════════════════════════════════════════════════
@@ -434,8 +498,16 @@
     metaRow.style.gap = '6px';
     metaRow.style.marginBottom = '12px';
     metaRow.style.flexWrap = 'wrap';
+    const _visible = getVisibleList();
+    const _totalVisible = _visible.length;
+    const _label = state.filter
+      ? (state.filter.type === 'wrong' ? 'Falladas' : 'Pendientes') + ' '
+      : 'Pregunta ';
+    const _badgeClass = state.filter
+      ? 'q-number ' + (state.filter.type === 'wrong' ? 'filtered-wrong' : 'filtered-pending')
+      : 'q-number';
     metaRow.innerHTML =
-      '<span class="q-number">Pregunta ' + (state.idx + 1) + ' / ' + state.order.length + '</span>' +
+      '<span class="' + _badgeClass + '">' + _label + (state.idx + 1) + ' / ' + _totalVisible + '</span>' +
       '<span class="q-type-tag ' + q.type.replace('dragMatch', 'match').replace('dropOrder', 'order') + '">' +
         (TYPE_LABEL[q.type] || q.type) + '</span>';
     host.appendChild(metaRow);
@@ -1132,15 +1204,24 @@
 
   function updateProgress() {
     const stats = computeStats();
+    const visible = getVisibleList();
+    const totalVisible = visible.length || 1;
 
     // Barra progreso móvil
     const pText = $('#progressText');
     const pScore = $('#progressScore');
     const pFill = $('#progressFill');
 
-    if (pText) pText.textContent = 'Pregunta ' + (state.idx + 1) + ' / ' + stats.total;
+    if (pText) {
+      if (state.filter) {
+        const label = state.filter.type === 'wrong' ? 'Falladas' : 'Pendientes';
+        pText.textContent = label + ' ' + (state.idx + 1) + ' / ' + totalVisible;
+      } else {
+        pText.textContent = 'Pregunta ' + (state.idx + 1) + ' / ' + totalVisible;
+      }
+    }
     if (pScore) pScore.textContent = stats.score + '%';
-    if (pFill) pFill.style.width = ((state.idx + 1) / stats.total * 100) + '%';
+    if (pFill) pFill.style.width = ((state.idx + 1) / totalVisible * 100) + '%';
 
     // Panel lateral
     const panelIdx = $('#panelIdx');
@@ -1152,12 +1233,12 @@
     const panelFill = $('#panelProgressFill');
 
     if (panelIdx) panelIdx.textContent = state.idx + 1;
-    if (panelTotal) panelTotal.textContent = stats.total;
+    if (panelTotal) panelTotal.textContent = totalVisible;
     if (panelCorrect) panelCorrect.textContent = stats.correct;
     if (panelWrong) panelWrong.textContent = stats.wrong;
     if (panelPending) panelPending.textContent = stats.pending;
     if (panelScore) panelScore.textContent = stats.score + '%';
-    if (panelFill) panelFill.style.width = ((state.idx + 1) / stats.total * 100) + '%';
+    if (panelFill) panelFill.style.width = ((state.idx + 1) / totalVisible * 100) + '%';
 
     // Botones
     const btnPrev = $('#btnPrev');
@@ -1165,8 +1246,27 @@
     const btnFinish = $('#btnFinish');
 
     if (btnPrev) btnPrev.disabled = state.idx === 0;
-    if (btnNext) btnNext.disabled = state.idx === state.order.length - 1;
+    if (btnNext) btnNext.disabled = state.idx === totalVisible - 1;
     if (btnFinish) btnFinish.disabled = stats.answered < stats.total;
+
+    // Auto-salir del filtro si ya no quedan preguntas en él
+    if (state.filter) {
+      const AUTO_EXIT_FILTER = state.filter.type === 'wrong' ? true : false;
+      // Solo auto-salir de "falladas": cuando aciertas una, deja de estar
+      // en la lista. Las pendientes se auto-limpian solas al contestar.
+      if (state.filter.type === 'pending') {
+        const pendientesAhora = QUESTIONS.filter(q => {
+          const a = state.answers[q.id];
+          return !a || !a.answered;
+        }).length;
+        if (pendientesAhora === 0) {
+          state.filter = null;
+          state.idx = 0;
+          saveState();
+          setTimeout(() => { render(); updateProgress(); }, 0);
+        }
+      }
+    }
   }
 
   /* ═══════════════════════════════════════════════════════
@@ -1175,45 +1275,53 @@
 
   function filterPending() {
     cerrarPanel();
-    const pending = [];
+    if (!state.filter) state.saveIdxBeforeFilter = state.idx;
+    const ids = [];
     QUESTIONS.forEach((q, i) => {
       const a = state.answers[q.id];
-      if (!a || !a.answered) pending.push(i);
+      if (!a || !a.answered) ids.push(i);
     });
-    if (pending.length === 0) {
+    if (ids.length === 0) {
       toast('🎉 ¡No quedan preguntas pendientes!');
+      state.filter = null;
+      state.idx = 0;
+      saveState();
+      render();
+      updateProgress();
       return;
     }
-    state.order = shuffle(pending);
+    state.filter = { type: 'pending', ids };
     state.idx = 0;
     saveState();
     render();
     updateProgress();
-    toast('🎯 ' + pending.length + ' preguntas pendientes');
+    toast('🎯 ' + ids.length + ' preguntas pendientes');
   }
 
   function filterWrong() {
     cerrarPanel();
-    const wrong = [];
+    if (!state.filter) state.saveIdxBeforeFilter = state.idx;
+    const ids = [];
     QUESTIONS.forEach((q, i) => {
       const a = state.answers[q.id];
-      if (a && a.answered && !a.isCorrect) wrong.push(i);
+      if (a && a.answered && !a.isCorrect) ids.push(i);
     });
-    if (wrong.length === 0) {
+    if (ids.length === 0) {
       toast('✨ No tienes preguntas falladas');
+      state.filter = null;
+      state.idx = 0;
+      saveState();
+      render();
+      updateProgress();
       return;
     }
-    state.order = shuffle(wrong);
+    state.filter = { type: 'wrong', ids };
     state.idx = 0;
     saveState();
     render();
     updateProgress();
-    toast('❌ ' + wrong.length + ' preguntas falladas para repasar');
+    toast('❌ ' + ids.length + ' preguntas falladas');
   }
-
-  /* ═══════════════════════════════════════════════════════
-     CORREGIR TODO (modo examen)
-     ═══════════════════════════════════════════════════════ */
 
   function finishAll() {
     state.finished = true;
@@ -1289,6 +1397,8 @@
     if (!confirm('¿Reiniciar todo? Se borrarán tus respuestas.')) return;
 
     state.answers = {};
+
+    state.filter = null;
     state.finished = false;
     state.reviewed = false;
     state.optOrder = {};

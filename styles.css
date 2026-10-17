@@ -1613,3 +1613,80 @@ kbd {
     z-index: 199;
   }
 }
+
+
+/* ═══════════════════════════════════════════════════════
+   BANNER DE FILTRO ACTIVO
+   ═══════════════════════════════════════════════════════ */
+
+.filter-banner {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  margin: 0 0 16px 0;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  animation: fadeIn .25s ease;
+  flex-wrap: wrap;
+}
+
+.filter-banner.visible {
+  display: flex;
+}
+
+.filter-banner.banner-pending {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+  border-left: 4px solid var(--warn);
+}
+
+.filter-banner.banner-wrong {
+  background: var(--bad-soft);
+  color: var(--bad-text);
+  border-left: 4px solid var(--bad);
+}
+
+.filter-banner-text {
+  flex: 1;
+  min-width: 200px;
+}
+
+.filter-banner-btn {
+  padding: 6px 14px;
+  background: var(--panel);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s ease;
+  color: inherit;
+  white-space: nowrap;
+}
+
+.filter-banner-btn:hover {
+  background: currentColor;
+  filter: brightness(1.1);
+}
+
+.filter-banner-btn:hover span {
+  color: #fff;
+}
+
+.filter-banner-btn span {
+  transition: color .15s ease;
+}
+
+/* Badge filtrado: color distinto al de pregunta normal */
+.q-number.filtered-pending {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+.q-number.filtered-wrong {
+  background: var(--bad-soft);
+  color: var(--bad-text);
+}
